@@ -1,0 +1,154 @@
+# Project Points
+
+Tiny project-local point graph for paper and research work. It stores small
+knowledge points and manually maintained relations in plain JSONL.
+
+It is designed to be copied directly into another project with no install step.
+
+```text
+project_points/
+├── README.md
+├── skill.md
+├── requirements.txt
+├── graph.py
+├── nodes.jsonl
+├── edges.jsonl
+└── index/
+    └── README.md
+```
+
+No package install, no MCP, no background hook, no embedding dependency.
+
+## What It Does
+
+Use it for small project-level knowledge that is too specific for generic
+embedding search:
+
+- paper ideas
+- claim fragments
+- source hints
+- verification tasks
+- decision points
+- model assumptions
+- rejected or caution notes
+- manual relations between points
+
+It supports:
+
+- write points
+- update points
+- search points with lightweight BM25
+- list by tag/kind/status/evidence
+- link points with explicit relations
+- inspect one point or its neighborhood
+
+## Installation / Copy-In
+
+Copy the folder into a project:
+
+```bash
+cp -r project_points /path/to/target_project/
+```
+
+Check that Python can run it:
+
+```bash
+python3 project_points/graph.py list
+```
+
+There are no external Python dependencies. `requirements.txt` is included only
+as an installation marker for template workflows. After confirming there is
+nothing to install, it can be deleted from the target project:
+
+```bash
+rm project_points/requirements.txt
+```
+
+Keep `skill.md` in the project long term. Its role is to tell agents how to use
+this folder: active query/write, no automatic prompt injection, manual
+relations, JSONL as source of truth.
+
+If you want a blank copy, clear the data files:
+
+```bash
+: > project_points/nodes.jsonl
+: > project_points/edges.jsonl
+```
+
+## Commands
+
+Add a point:
+
+```bash
+python3 project_points/graph.py add "GlassBridge value depends on whether the glass interlayer offsets extra interface cost." \
+  --kind decision_point \
+  --tags glassbridge,cost,yield \
+  --evidence idea \
+  --source-hint "user discussion; Corning brochure to verify"
+```
+
+Search:
+
+```bash
+python3 project_points/graph.py search "glass interlayer cost"
+```
+
+Link two points:
+
+```bash
+python3 project_points/graph.py link P0001 P0002 --relation depends_on --note "cost closure depends on testing partition"
+```
+
+Inspect:
+
+```bash
+python3 project_points/graph.py node P0001
+python3 project_points/graph.py neighborhood P0001
+python3 project_points/graph.py list --tag glassbridge
+```
+
+Update:
+
+```bash
+python3 project_points/graph.py update P0001 --status pending --evidence E2/PENDING
+```
+
+## Data Model
+
+`nodes.jsonl` stores points:
+
+```json
+{
+  "id": "P0001",
+  "kind": "decision_point",
+  "text": "A short point.",
+  "tags": ["glassbridge", "cost"],
+  "status": "active",
+  "evidence": "idea",
+  "source_hint": "where this came from or what to check",
+  "created_at": "...",
+  "updated_at": "..."
+}
+```
+
+`edges.jsonl` stores manual relations:
+
+```json
+{
+  "source": "P0001",
+  "target": "P0002",
+  "relation": "depends_on",
+  "note": "why the relation exists",
+  "created_at": "..."
+}
+```
+
+## Boundary
+
+This is not a general memory system. It is for small, manually maintained,
+project-specific point graphs. Embedding can be added later as a disposable
+cache under `index/`, but JSONL remains the source of truth.
+
+The intended scale is tens to hundreds of points. For larger document
+collections, build a separate RAG/knowledge-base system instead of expanding
+this folder into a hidden platform.

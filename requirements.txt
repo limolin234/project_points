@@ -1,0 +1,5 @@
+# No external dependencies.
+#
+# This file is included as a template/install marker only.
+# After copying project_points/ into a target project and confirming there is
+# nothing to install, you may delete this file and keep skill.md long term.
