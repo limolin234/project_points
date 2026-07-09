@@ -13,12 +13,6 @@ project_points/
 ├── graph.py
 ├── nodes.jsonl
 ├── edges.jsonl
-├── details/
-│   └── README.md
-├── references/
-│   └── README.md
-├── images/
-│   └── README.md
 └── index/
     └── README.md
 ```
@@ -162,14 +156,17 @@ this folder into a hidden platform.
 ## Fallback File Layout
 
 If the host project already has a file-management convention, follow that
-project convention. If it does not, keep extra material inside this folder using
-these fixed names:
+project convention. If it does not, create extra material folders only when
+needed, using these fixed names:
 
 - `details/`: longer notes, worked analysis, or draft fragments that are too
   large for one point.
 - `references/`: source lists, citation notes, excerpts, and verification
   records.
 - `images/`: figures, screenshots, diagrams, and other image files.
+
+These folders do not need to exist in a blank copy. Create them lazily when the
+first real file is needed.
 
 Do not put long prose, raw reference dumps, or image payloads into
 `nodes.jsonl`. Add a short point and use `source_hint` or `note` to point to the
