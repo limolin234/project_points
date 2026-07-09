@@ -27,6 +27,11 @@ This is for project/paper-scale knowledge, usually tens to hundreds of points.
 - Treat `index/` as disposable cache space only.
 - Keep points short enough for an agent to inspect directly.
 - Preserve uncertainty in fields such as `evidence`, `status`, and `source_hint`.
+- If the host project has no file-management convention, use the fixed fallback
+  folders in this directory: `details/` for long notes, `references/` for source
+  and citation material, and `images/` for figures or screenshots.
+- Do not put long prose, raw reference dumps, or image payloads into JSONL; add
+  a short point and link to the fallback file path in `source_hint` or `note`.
 
 ## Commands
 
@@ -66,3 +71,7 @@ This claim depends on X; evidence is pending; verify with source Y.
 
 Avoid dumping long notes, full papers, raw chat logs, or generated prose into
 the graph. Store those elsewhere and add only a source hint or decision point.
+
+When there is no better project-local place for that external material, store it
+under `project_points/details/`, `project_points/references/`, or
+`project_points/images/` using the same fixed meanings as above.

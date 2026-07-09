@@ -13,6 +13,12 @@ project_points/
 ├── graph.py
 ├── nodes.jsonl
 ├── edges.jsonl
+├── details/
+│   └── README.md
+├── references/
+│   └── README.md
+├── images/
+│   └── README.md
 └── index/
     └── README.md
 ```
@@ -152,3 +158,19 @@ cache under `index/`, but JSONL remains the source of truth.
 The intended scale is tens to hundreds of points. For larger document
 collections, build a separate RAG/knowledge-base system instead of expanding
 this folder into a hidden platform.
+
+## Fallback File Layout
+
+If the host project already has a file-management convention, follow that
+project convention. If it does not, keep extra material inside this folder using
+these fixed names:
+
+- `details/`: longer notes, worked analysis, or draft fragments that are too
+  large for one point.
+- `references/`: source lists, citation notes, excerpts, and verification
+  records.
+- `images/`: figures, screenshots, diagrams, and other image files.
+
+Do not put long prose, raw reference dumps, or image payloads into
+`nodes.jsonl`. Add a short point and use `source_hint` or `note` to point to the
+relevant file path.
