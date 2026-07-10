@@ -50,6 +50,18 @@ Copy the folder into a project:
 cp -r project_points /path/to/target_project/
 ```
 
+If the copied folder includes this template repository's Git metadata, remove
+only the `.git` directory inside the copied `project_points/` folder. Do not
+delete the host project's `.git`. The goal is only to prevent the copied
+subfolder from becoming a nested Git repository:
+
+```bash
+rm -rf /path/to/target_project/project_points/.git
+```
+
+If you distribute `project_points` as a release archive, prefer an archive that
+does not include `.git`; then this cleanup step is unnecessary.
+
 Check that Python can run it:
 
 ```bash

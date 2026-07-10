@@ -23,6 +23,10 @@ This is for project/paper-scale knowledge, usually tens to hundreds of points.
 - Do not auto-inject points into every answer.
 - Query or write points only when they are relevant to the current task.
 - Keep relations explicit and manually maintained.
+- After copying this folder into another project, remove only the copied
+  `project_points/.git` if it exists. Do not remove the host project's `.git`.
+  The cleanup is only to prevent a nested Git repository inside the host
+  project.
 - Do not add required embedding dependencies.
 - Treat `index/` as disposable cache space only.
 - Keep points short enough for an agent to inspect directly.
