@@ -23,6 +23,9 @@ This is for project/paper-scale knowledge, usually tens to hundreds of points.
 - Do not auto-inject points into every answer.
 - Query or write points only when they are relevant to the current task.
 - Keep relations explicit and manually maintained.
+- Treat each non-merge Git commit that changes the point graph as one derived
+  exploration; use `history` or `exploration` instead of storing commit data in
+  JSONL.
 - After copying this folder into another project, remove only the copied
   `project_points/.git` if it exists. Do not remove the host project's `.git`.
   The cleanup is only to prevent a nested Git repository inside the host
@@ -63,6 +66,8 @@ Inspect context:
 python3 project_points/graph.py node P0001
 python3 project_points/graph.py neighborhood P0001
 python3 project_points/graph.py list --tag topic
+python3 project_points/graph.py history
+python3 project_points/graph.py exploration HEAD
 ```
 
 ## Writing Guidance

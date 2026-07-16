@@ -4,9 +4,11 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import re
+import subprocess
+import tempfile
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -14,10 +16,6 @@ ROOT = Path(__file__).resolve().parent
 NODES = ROOT / "nodes.jsonl"
 EDGES = ROOT / "edges.jsonl"
 TOKEN_RE = re.compile(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]")
-
-
-def now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -28,36 +26,33 @@ def read_jsonl(path: Path) -> list[dict]:
 
 
 def write_jsonl(path: Path, rows: list[dict]) -> None:
-    with path.open("w", encoding="utf-8") as f:
-        for row in rows:
-            f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
-
-
-def ensure_files() -> None:
-    ROOT.mkdir(parents=True, exist_ok=True)
-    if not NODES.exists():
-        NODES.write_text("", encoding="utf-8")
-    if not EDGES.exists():
-        EDGES.write_text("", encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            for row in rows:
+                f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_name, path)
+    finally:
+        if os.path.exists(tmp_name):
+            os.unlink(tmp_name)
 
 
 def nodes() -> list[dict]:
-    ensure_files()
     return read_jsonl(NODES)
 
 
 def edges() -> list[dict]:
-    ensure_files()
     return read_jsonl(EDGES)
 
 
 def save_nodes(rows: list[dict]) -> None:
-    ensure_files()
     write_jsonl(NODES, rows)
 
 
 def save_edges(rows: list[dict]) -> None:
-    ensure_files()
     write_jsonl(EDGES, rows)
 
 
@@ -67,6 +62,13 @@ def print_json(value: object) -> None:
 
 def parse_tags(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def nonnegative_int(value: str) -> int:
+    number = int(value)
+    if number < 0:
+        raise argparse.ArgumentTypeError("must be non-negative")
+    return number
 
 
 def next_id(rows: list[dict]) -> str:
@@ -99,7 +101,7 @@ def node_blob(node: dict) -> str:
 
 
 def compact_node(node: dict) -> dict:
-    keys = ["id", "kind", "text", "tags", "status", "evidence", "source_hint", "note", "created_at", "updated_at"]
+    keys = ["id", "kind", "text", "tags", "status", "evidence", "source_hint", "note"]
     return {key: node[key] for key in keys if key in node and node[key] not in ("", [], None)}
 
 
@@ -115,8 +117,6 @@ def add(args: argparse.Namespace) -> None:
         "source_hint": args.source_hint,
         "note": args.note,
         "properties": {},
-        "created_at": now(),
-        "updated_at": now(),
     }
     rows.append(node)
     save_nodes(rows)
@@ -160,8 +160,14 @@ def link(args: argparse.Namespace) -> None:
         "target": args.target,
         "relation": args.relation,
         "note": args.note,
-        "created_at": now(),
     }
+    clean_rows = [
+        {key: value for key, value in row.items() if key not in {"created_at", "updated_at"}}
+        for row in edge_rows
+    ]
+    if edge in clean_rows:
+        print_json(edge)
+        return
     edge_rows.append(edge)
     save_edges(edge_rows)
     print_json(edge)
@@ -232,9 +238,169 @@ def update(args: argparse.Namespace) -> None:
         node["source_hint"] = args.source_hint
     if args.note is not None:
         node["note"] = args.note
-    node["updated_at"] = now()
     save_nodes(rows)
     print_json(compact_node(node))
+
+
+def run_git(args: list[str], input_text: str | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "-c",
+                "core.quotepath=false",
+                "-c",
+                "i18n.logOutputEncoding=utf-8",
+                "-C",
+                str(ROOT),
+                *args,
+            ],
+            input=input_text,
+            text=True,
+            encoding="utf-8",
+            capture_output=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise SystemExit(f"Git exploration history is unavailable: cannot run git: {exc}") from exc
+    if check and result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "git command failed"
+        raise SystemExit(f"Git exploration history is unavailable: {detail}")
+    return result
+
+
+def git_paths() -> tuple[Path, str, str]:
+    result = run_git(["rev-parse", "--show-toplevel"], check=False)
+    if result.returncode != 0:
+        raise SystemExit("Git exploration history is unavailable: project_points is not inside a Git worktree")
+    repo_root = Path(result.stdout.strip()).resolve()
+    try:
+        node_path = NODES.relative_to(repo_root).as_posix()
+        edge_path = EDGES.relative_to(repo_root).as_posix()
+    except ValueError as exc:
+        raise SystemExit("Git exploration history is unavailable: point files are outside the Git worktree") from exc
+    return repo_root, node_path, edge_path
+
+
+def jsonl_from_revision(commit: str | None, path: str | None) -> list[dict]:
+    if commit is None or path is None:
+        return []
+    result = run_git(["show", f"{commit}:{path}"], check=False)
+    if result.returncode != 0:
+        return []
+    try:
+        return [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Invalid JSONL in {path} at {commit}: {exc}") from exc
+
+
+def rows_by_id(rows: list[dict], path: str) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for row in rows:
+        row = {key: value for key, value in row.items() if key not in {"created_at", "updated_at"}}
+        row_id = str(row.get("id", ""))
+        if not row_id:
+            raise SystemExit(f"Point without id in {path}")
+        if row_id in out:
+            raise SystemExit(f"Duplicate point id {row_id} in {path}")
+        out[row_id] = row
+    return out
+
+
+def relation_changes(before: list[dict], after: list[dict]) -> tuple[list[dict], list[dict]]:
+    def counted(rows: list[dict]) -> Counter[str]:
+        clean_rows = [
+            {key: value for key, value in row.items() if key not in {"created_at", "updated_at"}}
+            for row in rows
+        ]
+        return Counter(json.dumps(row, ensure_ascii=False, sort_keys=True) for row in clean_rows)
+
+    old = counted(before)
+    new = counted(after)
+    added = [json.loads(key) for key in sorted(new) for _ in range(max(new[key] - old[key], 0))]
+    removed = [json.loads(key) for key in sorted(old) for _ in range(max(old[key] - new[key], 0))]
+    return added, removed
+
+
+def stable_patch_id(commit: str, parent: str | None) -> str:
+    if parent:
+        patch = run_git(["diff", "--binary", "--full-index", parent, commit]).stdout
+    else:
+        patch = run_git(["show", "--root", "--pretty=format:", "--binary", "--full-index", commit]).stdout
+    result = run_git(["patch-id", "--stable"], input_text=patch, check=False)
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.split()[0]
+    raise SystemExit("Git exploration history is unavailable: cannot calculate stable patch identity")
+
+
+def exploration_data(revision: str) -> dict:
+    _, node_path, edge_path = git_paths()
+    commit = run_git(["rev-parse", "--verify", f"{revision}^{{commit}}"]).stdout.strip()
+    metadata = run_git(["show", "-s", "--format=%P%x00%s", commit]).stdout.rstrip("\n").split("\x00")
+    parents = metadata[0].split() if metadata and metadata[0] else []
+    parent = parents[0] if parents else None
+
+    before_nodes = rows_by_id(jsonl_from_revision(parent, node_path), node_path)
+    after_nodes = rows_by_id(jsonl_from_revision(commit, node_path), node_path)
+    added = sorted(after_nodes.keys() - before_nodes.keys())
+    removed = sorted(before_nodes.keys() - after_nodes.keys())
+    updated = sorted(key for key in after_nodes.keys() & before_nodes.keys() if after_nodes[key] != before_nodes[key])
+
+    added_relations, removed_relations = relation_changes(
+        jsonl_from_revision(parent, edge_path),
+        jsonl_from_revision(commit, edge_path),
+    )
+    point_ids = set(added + updated + removed)
+    for edge in added_relations + removed_relations:
+        point_ids.update(str(edge.get(key, "")) for key in ("source", "target") if edge.get(key))
+
+    changes = {
+        "points": {"added": added, "updated": updated, "removed": removed},
+        "relations": {"added": added_relations, "removed": removed_relations},
+    }
+    patch_id = stable_patch_id(commit, parent)
+    return {
+        "exploration_id": f"E{patch_id[:12]}",
+        "commit": commit,
+        "parents": parents,
+        "summary": metadata[1],
+        "point_ids": sorted(point_ids),
+        "changes": changes,
+    }
+
+
+def exploration(args: argparse.Namespace) -> None:
+    item = exploration_data(args.revision)
+    if len(item["parents"]) > 1:
+        raise SystemExit("Merge commits do not define explorations; inspect a non-merge commit")
+    if not item["point_ids"]:
+        raise SystemExit("The revision does not change any point or relation")
+    print_json(item)
+
+
+def history(args: argparse.Namespace) -> None:
+    _, node_path, edge_path = git_paths()
+    head = run_git(["rev-parse", "--verify", "HEAD"], check=False)
+    if head.returncode != 0:
+        print_json([])
+        return
+    result = run_git([
+        "log",
+        "--reverse",
+        "--no-merges",
+        "--format=%H",
+        "--",
+        f":(top,literal){node_path}",
+        f":(top,literal){edge_path}",
+    ])
+    commits = [line for line in result.stdout.splitlines() if line]
+    explorations = [exploration_data(commit) for commit in commits]
+    explorations = [item for item in explorations if item["point_ids"]]
+    if args.limit == 0:
+        explorations = []
+    elif args.limit:
+        explorations = explorations[-args.limit :]
+    print_json(explorations)
 
 
 def main() -> None:
@@ -271,7 +437,7 @@ def main() -> None:
 
     p = sub.add_parser("search")
     p.add_argument("query")
-    p.add_argument("--limit", type=int, default=10)
+    p.add_argument("--limit", type=nonnegative_int, default=10)
     p.set_defaults(func=search)
 
     p = sub.add_parser("node")
@@ -287,8 +453,16 @@ def main() -> None:
     p.add_argument("--kind", default="")
     p.add_argument("--status", default="")
     p.add_argument("--evidence", default="")
-    p.add_argument("--limit", type=int, default=50)
+    p.add_argument("--limit", type=nonnegative_int, default=50)
     p.set_defaults(func=list_nodes)
+
+    p = sub.add_parser("history", help="derive exploration nodes from Git history")
+    p.add_argument("--limit", type=nonnegative_int, default=50)
+    p.set_defaults(func=history)
+
+    p = sub.add_parser("exploration", help="inspect one Git-backed exploration")
+    p.add_argument("revision", help="commit, tag, or other Git revision")
+    p.set_defaults(func=exploration)
 
     args = parser.parse_args()
     args.func(args)

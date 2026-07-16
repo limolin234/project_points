@@ -41,6 +41,7 @@ It supports:
 - list by tag/kind/status/evidence
 - link points with explicit relations
 - inspect one point or its neighborhood
+- derive exploration nodes from Git commits that change the point graph
 
 ## Installation / Copy-In
 
@@ -117,6 +118,8 @@ Inspect:
 python3 project_points/graph.py node P0001
 python3 project_points/graph.py neighborhood P0001
 python3 project_points/graph.py list --tag glassbridge
+python3 project_points/graph.py history
+python3 project_points/graph.py exploration HEAD
 ```
 
 Update:
@@ -137,9 +140,7 @@ python3 project_points/graph.py update P0001 --status pending --evidence E2/PEND
   "tags": ["glassbridge", "cost"],
   "status": "active",
   "evidence": "idea",
-  "source_hint": "where this came from or what to check",
-  "created_at": "...",
-  "updated_at": "..."
+  "source_hint": "where this came from or what to check"
 }
 ```
 
@@ -150,10 +151,26 @@ python3 project_points/graph.py update P0001 --status pending --evidence E2/PEND
   "source": "P0001",
   "target": "P0002",
   "relation": "depends_on",
-  "note": "why the relation exists",
-  "created_at": "..."
+  "note": "why the relation exists"
 }
 ```
+
+## Git Explorations
+
+When the folder is inside a Git worktree, each non-merge commit that changes
+`nodes.jsonl` or `edges.jsonl` is exposed as one exploration. The changed
+points, relations, and project files are derived from Git; they are not copied
+back into JSONL.
+
+`exploration_id` uses Git's stable patch identity, so an unchanged patch keeps
+the same exploration ID after a normal rebase even though its commit hash and
+parents change. Conflict resolution that changes the patch creates a new
+exploration identity.
+
+Git history is optional. The point graph commands still work when this folder
+is copied without its host repository history. Git calls use one UTF-8 wrapper
+and standard local Git commands. Keep the `project_points/` path stable after
+history begins; moving it starts a new history view.
 
 ## Boundary
 
